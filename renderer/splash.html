@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #060a12;
+  color: #00ff41;
+  font-family: 'Courier New', Courier, monospace;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+/* ── Scanline overlay ─────────────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,.06) 2px,
+    rgba(0,0,0,.06) 4px
+  );
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* ── Logo ─────────────────────────────────────── */
+#logo-wrap {
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+#logo {
+  width: 110px;
+  height: auto;
+  filter: drop-shadow(0 0 18px rgba(0,200,80,.55));
+  animation: pulse 3s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { filter: drop-shadow(0 0 18px rgba(0,200,80,.55)); }
+  50%      { filter: drop-shadow(0 0 32px rgba(0,255,80,.9)); }
+}
+#app-name {
+  margin-top: 10px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: .25em;
+  color: #00ff41;
+  text-shadow: 0 0 14px rgba(0,255,65,.7);
+}
+#app-sub {
+  font-size: 9px;
+  letter-spacing: .35em;
+  color: #00802a;
+  margin-top: 3px;
+  text-transform: uppercase;
+}
+
+/* ── Divider ──────────────────────────────────── */
+.divider {
+  width: 480px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #00ff41 30%, #00ff41 70%, transparent);
+  margin: 16px 0 12px;
+  opacity: .35;
+}
+
+/* ── Terminal block ───────────────────────────── */
+#terminal {
+  width: 480px;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── System info ──────────────────────────────── */
+#sysinfo {
+  font-size: 11px;
+  color: #00cc35;
+  margin-bottom: 8px;
+  line-height: 1.7;
+}
+.sys-label { color: #006620; }
+.sys-val   { color: #00ff41; }
+
+/* ── Log lines ────────────────────────────────── */
+#log {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 11px;
+}
+.log-line {
+  display: flex;
+  gap: 8px;
+  line-height: 1.65;
+  opacity: 0;
+  transform: translateX(-6px);
+  animation: appear .2s forwards;
+}
+@keyframes appear {
+  to { opacity: 1; transform: translateX(0); }
+}
+.log-prefix { color: #006620; flex-shrink: 0; }
+.log-text   { color: #00e838; }
+.log-ok     { color: #00ff41; margin-left: auto; flex-shrink: 0; }
+.log-warn   { color: #e8a200; }
+.log-err    { color: #ff4444; }
+
+/* ── Progress bar ─────────────────────────────── */
+#progress-wrap {
+  width: 480px;
+  margin: 12px 0 8px;
+  flex-shrink: 0;
+}
+#progress-track {
+  width: 100%;
+  height: 3px;
+  background: #001a08;
+  border-radius: 2px;
+  overflow: hidden;
+}
+#progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #006620, #00ff41);
+  border-radius: 2px;
+  transition: width .4s ease;
+  box-shadow: 0 0 8px #00ff4180;
+}
+#progress-label {
+  font-size: 9px;
+  color: #005518;
+  margin-top: 4px;
+  letter-spacing: .1em;
+}
+
+/* ── Footer ───────────────────────────────────── */
+#footer {
+  font-size: 9px;
+  color: #003d14;
+  letter-spacing: .12em;
+  padding-bottom: 12px;
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+
+<div id="logo-wrap">
+  <img id="logo" src="../assets/logo.png" alt="Logo">
+  <div id="app-name">SEARCHLMX</div>
+  <div id="app-sub">Earthquake Prediction &amp; Analysis Engine &nbsp;·&nbsp; v1.0.0</div>
+</div>
+
+<div class="divider"></div>
+
+<div id="terminal">
+  <div id="sysinfo"></div>
+  <div id="log"></div>
+</div>
+
+<div id="progress-wrap">
+  <div id="progress-track"><div id="progress-fill"></div></div>
+  <div id="progress-label">INITIALIZING...</div>
+</div>
+
+<div id="footer">POWERED BY LLAMA.CPP &nbsp;·&nbsp; USGS &nbsp;·&nbsp; NOAA SWPC &nbsp;·&nbsp; FDSN</div>
+
+<script>
+const sysEl   = document.getElementById('sysinfo')
+const logEl   = document.getElementById('log')
+const fillEl  = document.getElementById('progress-fill')
+const lblEl   = document.getElementById('progress-label')
+
+let stepCount = 0
+const TOTAL   = 10
+
+function addLog(text, type = 'ok') {
+  stepCount++
+  const pct = Math.min(98, Math.round((stepCount / TOTAL) * 100))
+  fillEl.style.width  = pct + '%'
+  lblEl.textContent   = pct + '% — ' + text.toUpperCase()
+
+  const line = document.createElement('div')
+  line.className = 'log-line'
+
+  const ts = new Date().toTimeString().slice(0, 8)
+
+  if (type === 'ok') {
+    line.innerHTML =
+      '<span class="log-prefix">[' + ts + ']</span>' +
+      '<span class="log-text">' + esc(text) + '</span>' +
+      '<span class="log-ok">[ OK ]</span>'
+  } else if (type === 'warn') {
+    line.innerHTML =
+      '<span class="log-prefix">[' + ts + ']</span>' +
+      '<span class="log-warn">⚠ ' + esc(text) + '</span>'
+  } else {
+    line.innerHTML =
+      '<span class="log-prefix">[' + ts + ']</span>' +
+      '<span class="log-err">✗ ' + esc(text) + '</span>'
+  }
+  logEl.appendChild(line)
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+}
+
+function fmt(b) {
+  if (b >= 1e12) return (b/1e12).toFixed(1) + ' TB'
+  if (b >= 1e9)  return (b/1e9).toFixed(1)  + ' GB'
+  if (b >= 1e6)  return (b/1e6).toFixed(1)  + ' MB'
+  return b + ' B'
+}
+
+SPLASH.onSysInfo(info => {
+  const lines = [
+    '<span class="sys-label">OS       : </span><span class="sys-val">' + esc(info.os)      + '</span>',
+    '<span class="sys-label">CPU      : </span><span class="sys-val">' + esc(info.cpu)     + '</span>',
+    '<span class="sys-label">CORES    : </span><span class="sys-val">' + info.cores + ' logical processors</span>',
+    '<span class="sys-label">RAM      : </span><span class="sys-val">' + fmt(info.totalRam) + ' total  /  ' + fmt(info.freeRam) + ' free</span>',
+    '<span class="sys-label">DISK C:  : </span><span class="sys-val">' + fmt(info.diskTotal) + ' total  /  ' + fmt(info.diskFree) + ' free</span>',
+  ]
+  sysEl.innerHTML = lines.join('<br>')
+})
+
+SPLASH.onStep(({ text, type }) => addLog(text, type))
+
+SPLASH.onDone(() => {
+  fillEl.style.width = '100%'
+  lblEl.textContent  = '100% — READY'
+  setTimeout(() => window.close(), 300)
+})
+
+// Signal ready
+window.addEventListener('DOMContentLoaded', () => SPLASH.ready())
+</script>
+</body>
+</html>

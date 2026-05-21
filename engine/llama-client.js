@@ -3,7 +3,9 @@
 const { spawn } = require('child_process')
 const path = require('path')
 
-const LLAMA_EXE = path.join(__dirname, '..', 'llama', 'llama-server.exe')
+const LLAMA_EXE = process.env.SEARCHLMX_LLAMA_DIR
+  ? path.join(process.env.SEARCHLMX_LLAMA_DIR, 'llama-server.exe')
+  : path.join(__dirname, '..', 'llama', 'llama-server.exe')
 const DEFAULT_PORT = 8080
 const HEALTH_POLL_MS = 3_000
 const STARTUP_TIMEOUT_MS = 480_000 // 8 min — large 9B models need time on CPU

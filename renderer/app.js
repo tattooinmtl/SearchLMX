@@ -109,6 +109,7 @@ function setupButtons() {
   document.getElementById('btn-refresh-stats').addEventListener('click',   loadStatsPanel)
   document.getElementById('btn-refresh-qnews').addEventListener('click',   loadQuakeNews)
   document.getElementById('btn-settings-load-model').addEventListener('click', settingsLoadModel)
+  document.getElementById('btn-open-models-folder').addEventListener('click', () => QE.openModelsFolder())
 
   // Settings tab switcher
   document.querySelectorAll('.stab').forEach(tab => {

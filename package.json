@@ -3,14 +3,68 @@
   "version": "1.0.0",
   "description": "Earthquake Prediction & Analysis Engine powered by Llama AI",
   "main": "main.js",
+  "author": "tattooinmtl",
+  "license": "MIT",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --dev"
+    "start": "SET ELECTRON_RUN_AS_NODE=&& electron .",
+    "dev": "SET ELECTRON_RUN_AS_NODE=&& electron . --dev",
+    "dist": "SET ELECTRON_RUN_AS_NODE=&& electron-builder --win"
   },
   "dependencies": {
     "astronomy-engine": "^2.1.19"
   },
   "devDependencies": {
-    "electron": "latest"
+    "electron": "^32.3.3",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.tattooinmtl.searchlmx",
+    "productName": "SearchLMx Quake Engine",
+    "copyright": "Copyright © 2026 tattooinmtl",
+    "asar": true,
+    "icon": "assets/logo.png",
+    "files": [
+      "**/*",
+      "!Models/**",
+      "!data/**",
+      "!llama/**",
+      "!**/*.gguf",
+      "!dist/**",
+      "!.git/**"
+    ],
+    "extraResources": [
+      {
+        "from": "llama/",
+        "to": "llama",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SearchLMx Quake Engine",
+      "installerSidebar": "assets/logo.png",
+      "deleteAppDataOnUninstall": false
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    }
   }
 }

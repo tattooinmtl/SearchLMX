@@ -444,8 +444,14 @@
           <div id="settings-model-status" style="font-size:11px;color:var(--text-dim);margin-bottom:16px">
             Current: <span id="settings-current-model">--</span>
           </div>
-          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Installed Models</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Installed Models</div>
+            <button class="btn btn-ghost btn-sm" id="btn-open-models-folder" title="Open the Models folder in Explorer to add .gguf files">&#128193; Open Models Folder</button>
+          </div>
           <div id="settings-model-list" style="display:flex;flex-direction:column;gap:6px"></div>
+          <div style="margin-top:10px;font-size:10px;color:var(--text-dim);line-height:1.5">
+            Drop any <code style="color:var(--text-muted)">.gguf</code> file into the Models folder, then click the refresh icon or reopen this tab to see it listed above.
+          </div>
         </div>
 
         <!-- Tab: Download Models -->

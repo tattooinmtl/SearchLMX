@@ -1,25 +1,46 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron')
-const path = require('path')
-const fs   = require('fs')
+const path  = require('path')
+const fs    = require('fs')
 const https = require('https')
 const http  = require('http')
+const os    = require('os')
+const { execSync } = require('child_process')
 
-const sources     = require('./engine/sources')
-const usgs        = sources  // backward compat alias
-const solar       = require('./engine/solar')
-const planetary   = require('./engine/planetary')
-const llamaClient = require('./engine/llama-client')
-const simulation  = require('./engine/simulation')
-const quakeDb     = require('./engine/quake-db')
-const statsEngine = require('./engine/stats-engine')
+// ── Runtime paths (dev vs packaged) ──────────────────────────────────────────
+// __dirname contains 'app.asar' when packaged; safe to check at module eval time
+const IS_PACKAGED = __dirname.includes('app.asar') || (process.resourcesPath && !__dirname.startsWith(process.cwd()))
+const LLAMA_DIR   = IS_PACKAGED
+  ? path.join(process.resourcesPath, 'llama')
+  : path.join(__dirname, 'llama')
+// MODELS_DIR and DATA_DIR need app.getPath — resolved inside whenReady via initPaths()
+let MODELS_DIR  = path.join(__dirname, 'Models')
+let DATA_DIR    = path.join(__dirname, 'data')
+let HISTORY_FILE, PERSONALITY_FILE, SKILLS_FILE
+
+function initPaths() {
+  if (app.isPackaged) {
+    const userData = app.getPath('userData')
+    MODELS_DIR  = path.join(userData, 'Models')
+    DATA_DIR    = path.join(userData, 'data')
+  }
+  HISTORY_FILE     = path.join(DATA_DIR, 'history.json')
+  PERSONALITY_FILE = path.join(DATA_DIR, 'personality.json')
+  SKILLS_FILE      = path.join(DATA_DIR, 'skills.json')
+  process.env.SEARCHLMX_LLAMA_DIR  = LLAMA_DIR
+  process.env.SEARCHLMX_MODELS_DIR = MODELS_DIR
+  fs.mkdirSync(DATA_DIR,   { recursive: true })
+  fs.mkdirSync(MODELS_DIR, { recursive: true })
+}
+
+const sources       = require('./engine/sources')
+const usgs          = sources  // backward compat alias
+const solar         = require('./engine/solar')
+const planetary     = require('./engine/planetary')
+const llamaClient   = require('./engine/llama-client')
+const simulation    = require('./engine/simulation')
+const quakeDb       = require('./engine/quake-db')
+const statsEngine   = require('./engine/stats-engine')
 const swarmDetector = require('./engine/swarm-detector')
-
-const DATA_DIR         = path.join(__dirname, 'data')
-const HISTORY_FILE     = path.join(DATA_DIR, 'history.json')
-const PERSONALITY_FILE = path.join(DATA_DIR, 'personality.json')
-const SKILLS_FILE      = path.join(DATA_DIR, 'skills.json')
-
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 
 const DEFAULT_PERSONALITY = {
   systemPrompt:  simulation.DEFAULT_SYSTEM_PROMPT,
@@ -66,11 +87,31 @@ function writeJson(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2))
 }
 
+let splashWindow = null
+
+function createSplash() {
+  splashWindow = new BrowserWindow({
+    width: 560, height: 560,
+    frame: false,
+    resizable: false,
+    center: true,
+    backgroundColor: '#060a12',
+    webPreferences: {
+      preload: path.join(__dirname, 'splash-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  })
+  splashWindow.loadFile(path.join(__dirname, 'renderer', 'splash.html'))
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1500, height: 920, minWidth: 1100, minHeight: 700,
     backgroundColor: '#0a0e1a',
     frame: false,
+    show: false,   // hidden until splash finishes
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -84,7 +125,113 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow)
+function getSysInfo() {
+  const totalRam = os.totalmem()
+  const freeRam  = os.freemem()
+  const cpus     = os.cpus()
+  const cpuName  = cpus[0]?.model?.trim() ?? 'Unknown CPU'
+  const cores    = cpus.length
+
+  // Disk space on Windows via WMIC
+  let diskTotal = 0, diskFree = 0
+  try {
+    const raw = execSync('wmic logicaldisk where "DeviceID=\'C:\'" get Size,FreeSpace /format:value', { timeout: 3000 })
+      .toString()
+    const freeMatch  = raw.match(/FreeSpace=(\d+)/)
+    const totalMatch = raw.match(/Size=(\d+)/)
+    if (freeMatch)  diskFree  = parseInt(freeMatch[1],  10)
+    if (totalMatch) diskTotal = parseInt(totalMatch[1], 10)
+  } catch { /* wmic unavailable */ }
+
+  return {
+    os:        `${os.type()} ${os.release()} (${os.arch()})`,
+    cpu:       cpuName,
+    cores,
+    totalRam,
+    freeRam,
+    diskTotal,
+    diskFree
+  }
+}
+
+function splashStep(text, type = 'ok') {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.send('splash:step', { text, type })
+  }
+}
+
+async function bootSequence() {
+  initPaths()
+  createSplash()
+  createWindow()
+
+  // Wait for splash to signal DOM ready
+  await new Promise(resolve => ipcMain.once('splash:ready', resolve))
+
+  // Send system info
+  splashWindow?.webContents.send('splash:sysinfo', getSysInfo())
+  await delay(120)
+
+  splashStep('Engine core loaded — sources, solar, planetary modules')
+  await delay(250)
+
+  splashStep('Quake database initializing — reading month shards')
+  await delay(200)
+
+  splashStep('USGS / EMSC / INGV / NRCan / GFZ / NCEDC endpoints ready')
+  await delay(200)
+
+  splashStep('NOAA SWPC solar weather interface ready')
+  await delay(180)
+
+  splashStep('Astronomy engine — tidal & planetary calculator ready')
+  await delay(180)
+
+  splashStep('Swarm detection & stats engine loaded')
+  await delay(150)
+
+  splashStep('Llama.cpp server interface ready — checking for model')
+  const models = getInstalledModels()
+  if (models.length > 0) {
+    splashStep(`Model directory OK — ${models.length} model(s) found`)
+  } else {
+    splashStep('No models found — use Settings → Download Models', 'warn')
+  }
+  await delay(200)
+
+  // Wait for main window to finish loading
+  await new Promise(resolve => {
+    if (mainWindow.webContents.isLoading()) {
+      mainWindow.webContents.once('did-finish-load', resolve)
+    } else {
+      resolve()
+    }
+  })
+
+  splashStep('UI renderer ready — all panels loaded')
+  await delay(200)
+
+  splashStep('SearchLMx Quake Engine ready')
+  await delay(300)
+
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.send('splash:done')
+    await delay(500)
+    splashWindow.close()
+  }
+  splashWindow = null
+  mainWindow.show()
+}
+
+function getInstalledModels() {
+  try {
+    return fs.readdirSync(MODELS_DIR).filter(f => f.endsWith('.gguf'))
+  } catch { return [] }
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)) }
+
+app.whenReady().then(bootSequence)
 app.on('window-all-closed', () => { llamaClient.stopServer(); app.quit() })
 
 // ── Shell ─────────────────────────────────────────────────────────────────────
@@ -159,7 +306,7 @@ ipcMain.handle('analyst:chat', async (event, { messages }) => {
 
 // ── Llama server ──────────────────────────────────────────────────────────────
 ipcMain.handle('llama:start', async (event, opts = {}) => {
-  const modelPath = opts.model ?? path.join(__dirname, 'Models', 'Llama-3.2-3B.Q4_K_M.gguf')
+  const modelPath = opts.model ?? path.join(MODELS_DIR, 'Llama-3.2-3B-Instruct-Q4_K_M.gguf')
   const port = opts.port ?? 8080
   const ctxSize = opts.ctxSize ?? 4096
   const send = (msg) => event.sender.send('llama:startProgress', { step: msg, pct: 40 })
@@ -174,11 +321,10 @@ ipcMain.handle('llama:stop',   async () => { llamaClient.stopServer(); return { 
 ipcMain.handle('llama:status', async () => ({ running: await llamaClient.checkHealth() }))
 
 ipcMain.handle('llama:models', async () => {
-  const dir = path.join(__dirname, 'Models')
   try {
-    return fs.readdirSync(dir)
+    return fs.readdirSync(MODELS_DIR)
       .filter(f => f.endsWith('.gguf'))
-      .map(f => ({ name: f, path: path.join(dir, f) }))
+      .map(f => ({ name: f, path: path.join(MODELS_DIR, f) }))
   } catch { return [] }
 })
 
@@ -267,13 +413,12 @@ ipcMain.handle('sources:list', async () => {
 
 // ── Model download ────────────────────────────────────────────────────────────
 ipcMain.handle('model:download', async (event, { url, filename }) => {
-  const modelsDir = path.join(__dirname, 'Models')
-  if (!fs.existsSync(modelsDir)) fs.mkdirSync(modelsDir, { recursive: true })
+  if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true })
 
-  const destPath = path.join(modelsDir, filename)
+  const destPath = path.join(MODELS_DIR, filename)
 
   // Prevent path traversal
-  if (!destPath.startsWith(modelsDir)) return { error: 'Invalid filename' }
+  if (!destPath.startsWith(MODELS_DIR)) return { error: 'Invalid filename' }
 
   const send = (data) => event.sender.send('model:downloadProgress', data)
 
@@ -335,8 +480,14 @@ ipcMain.handle('model:download', async (event, { url, filename }) => {
 })
 
 ipcMain.handle('model:cancelDownload', async (_, { filename }) => {
-  const destPath = path.join(__dirname, 'Models', filename)
+  const destPath = path.join(MODELS_DIR, filename)
   try { fs.unlinkSync(destPath) } catch { /* ok */ }
+  return { success: true }
+})
+
+ipcMain.handle('model:openFolder', async () => {
+  fs.mkdirSync(MODELS_DIR, { recursive: true })
+  await shell.openPath(MODELS_DIR)
   return { success: true }
 })
 

@@ -100,6 +100,7 @@ echo.
 echo [4/4] Launching SearchLMx Quake Engine application...
 echo.
 cd /d "%APP_DIR%"
+SET ELECTRON_RUN_AS_NODE=
 npm start
 
 echo.

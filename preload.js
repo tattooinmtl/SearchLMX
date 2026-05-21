@@ -54,9 +54,10 @@ contextBridge.exposeInMainWorld('QE', {
   // Source list
   listSources: ()      => ipcRenderer.invoke('sources:list'),
 
-  // Model download
+  // Model download & folder
   downloadModel:       (url, filename) => ipcRenderer.invoke('model:download', { url, filename }),
   cancelModelDownload: (filename)      => ipcRenderer.invoke('model:cancelDownload', { filename }),
+  openModelsFolder:    ()              => ipcRenderer.invoke('model:openFolder'),
 
   // Open URL in default browser
   openExternal: (url) => {
