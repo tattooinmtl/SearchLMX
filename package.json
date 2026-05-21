@@ -1,0 +1,16 @@
+{
+  "name": "searchlmx-quake-engine",
+  "version": "1.0.0",
+  "description": "Earthquake Prediction & Analysis Engine powered by Llama AI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "dependencies": {
+    "astronomy-engine": "^2.1.19"
+  },
+  "devDependencies": {
+    "electron": "latest"
+  }
+}

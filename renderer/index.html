@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self';
+           script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net;
+           style-src  'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net;
+           img-src    'self' data: blob: https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org;
+           connect-src 'self' http://127.0.0.1:*
+                        https://service.earthscope.org
+                        https://www.earthquakescanada.nrcan.gc.ca
+                        https://service.ncedc.org
+                        https://service.scedc.caltech.edu
+                        https://geofon.gfz-potsdam.de
+                        https://webservices.ingv.it;
+           font-src   'self' data:;">
+<title>SearchLMx Quake Engine</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="init-overlay">
+  <div class="spinner"></div>
+  <div class="io-title">SEARCHLMX QUAKE ENGINE</div>
+  <div class="io-sub" id="init-msg">Initializing...</div>
+</div>
+
+<div id="app">
+  <!-- TITLEBAR -->
+  <div id="titlebar">
+    <div class="logo"><div class="logo-dot"></div>SEARCHLMX</div>
+    <div class="title-center">EARTHQUAKE PREDICTION &amp; ANALYSIS ENGINE</div>
+    <div class="win-controls">
+      <button class="win-btn" id="btn-min">&#x2014;</button>
+      <button class="win-btn" id="btn-max">&#x25A1;</button>
+      <button class="win-btn close" id="btn-close">&#x2715;</button>
+    </div>
+  </div>
+
+  <div id="body">
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+      <div class="nav-section-label">Monitor</div>
+      <button class="nav-btn active" data-panel="dashboard"><span class="nav-icon">&#9675;</span> Dashboard</button>
+      <button class="nav-btn" data-panel="quakefeed"><span class="nav-icon">&#9650;</span> Quake Feed</button>
+      <button class="nav-btn" data-panel="solar"><span class="nav-icon">&#9728;</span> Solar Monitor</button>
+      <button class="nav-btn" data-panel="planetary"><span class="nav-icon">&#9684;</span> Planetary &amp; Tidal</button>
+      <button class="nav-btn" data-panel="database"><span class="nav-icon">&#128202;</span> Quake Database</button>
+      <button class="nav-btn" data-panel="stats"><span class="nav-icon">&#128200;</span> Statistics</button>
+      <button class="nav-btn" data-panel="qnews"><span class="nav-icon">&#9889;</span> Quake News</button>
+      <button class="nav-btn" data-panel="stations"><span class="nav-icon">&#128225;</span> Live Stations</button>
+
+      <div class="nav-section-label">Analysis</div>
+      <button class="nav-btn" data-panel="simulation"><span class="nav-icon">&#9654;</span> Run Simulation</button>
+      <button class="nav-btn" data-panel="history"><span class="nav-icon">&#9776;</span> History</button>
+
+      <div class="nav-section-label">Config</div>
+      <button class="nav-btn" data-panel="appsettings"><span class="nav-icon">&#9881;</span> Settings</button>
+
+      <!-- Server -->
+      <div id="server-panel">
+        <div class="sp-title">Llama Server</div>
+        <div><span id="server-status-dot" class="offline"></span><span id="server-status-text">Offline</span></div>
+        <div class="server-model">Model: <span id="server-model-name">--</span></div>
+        <select id="sidebar-model-select" class="ctrl-select" style="width:100%;margin:5px 0;font-size:10px"></select>
+        <button class="btn btn-primary btn-sm btn-block" id="btn-sidebar-load-model" style="margin-bottom:4px">&#9654; Load Model</button>
+        <button class="btn btn-ghost btn-sm btn-block btn-server" id="btn-toggle-server">Start / Restart</button>
+      </div>
+    </div>
+
+    <!-- CONTENT -->
+    <div id="content">
+
+      <!-- ── DASHBOARD ──────────────────────────────────────────────── -->
+      <div class="panel active" id="panel-dashboard">
+        <div class="panel-header">
+          <h2>Global Seismic Dashboard</h2>
+          <div class="phd-right">
+            <label style="font-size:11px;color:var(--text-muted)">Range:
+              <select id="dash-hours" class="ctrl-select" style="width:90px;margin-left:4px">
+                <option value="1">1 hour</option>
+                <option value="6">6 hours</option>
+                <option value="12">12 hours</option>
+                <option value="24" selected>24 hours</option>
+                <option value="72">3 days</option>
+                <option value="720">30 days</option>
+              </select>
+            </label>
+            <label style="font-size:11px;color:var(--text-muted);margin-left:10px">Map min M:
+              <span id="dash-mag-val" style="font-family:var(--mono);color:var(--accent)">0.0</span>
+              <input type="range" id="dash-mag-slider" min="0" max="10" step="0.1" value="0"
+                style="width:90px;vertical-align:middle;margin-left:4px">
+            </label>
+            <span id="dash-updated" style="margin-left:8px">--</span>
+            <button class="btn btn-ghost btn-sm" id="btn-refresh-dash">Refresh</button>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="stat-label">Quakes (range)</div><div class="stat-value" id="s-quakes">--</div><div class="stat-sub" id="s-quakes-sub">M0.1+ global</div></div>
+          <div class="stat-card"><div class="stat-label">Max Magnitude</div><div class="stat-value" id="s-maxmag">--</div><div class="stat-sub">in selected range</div></div>
+          <div class="stat-card"><div class="stat-label">Solar X-Ray</div><div class="stat-value" id="s-solar">--</div><div class="stat-sub">current flux class</div></div>
+          <div class="stat-card"><div class="stat-label">Kp Index</div><div class="stat-value" id="s-kp">--</div><div class="stat-sub" id="s-kp-storm">--</div></div>
+          <div class="stat-card"><div class="stat-label">Tidal Stress</div><div class="stat-value" id="s-tidal">--</div><div class="stat-sub" id="s-tidal-type">--</div></div>
+          <div class="stat-card risk" id="s-risk-card"><div class="stat-label">Risk Index</div><div class="stat-value" id="s-risk">--</div><div class="stat-sub" id="s-risk-level">Run simulation</div></div>
+        </div>
+        <div id="dashboard-body">
+          <div id="dash-map-wrap">
+            <div id="map-container">
+              <div id="quake-map"></div>
+              <div class="map-legend">
+                <div class="ml-title">MAGNITUDE</div>
+                <div class="ml-row"><div class="ml-dot" style="background:#60a5fa"></div> &lt; M3.0</div>
+                <div class="ml-row"><div class="ml-dot" style="background:#a3e635"></div> M3.0 – 3.9</div>
+                <div class="ml-row"><div class="ml-dot" style="background:#f59e0b"></div> M4.0 – 4.9</div>
+                <div class="ml-row"><div class="ml-dot" style="background:#f97316"></div> M5.0 – 5.9</div>
+                <div class="ml-row"><div class="ml-dot" style="background:#ef4444"></div> M6.0 – 6.9</div>
+                <div class="ml-row"><div class="ml-dot" style="background:#9333ea"></div> M7.0 +</div>
+              </div>
+            </div>
+          </div>
+          <div id="dash-right">
+            <div class="recent-list-header">Significant Events</div>
+            <div id="recent-quakes-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── QUAKE FEED ─────────────────────────────────────────────── -->
+      <div class="panel" id="panel-quakefeed">
+        <div class="panel-header">
+          <h2>Live Earthquake Feed</h2>
+          <div class="phd-right">
+            <label>Min Mag: <select id="qf-minmag" class="ctrl-select" style="width:70px;margin-left:4px">
+              <option value="0.1">M0.1</option><option value="1.0">M1.0</option>
+              <option value="2.5" selected>M2.5</option><option value="3.0">M3.0</option>
+              <option value="4.0">M4.0</option><option value="5.0">M5.0</option>
+            </select></label>
+            <label style="margin-left:10px">Hours: <select id="qf-hours" class="ctrl-select" style="width:85px;margin-left:4px">
+              <option value="1">1h</option><option value="6">6h</option>
+              <option value="12">12h</option><option value="24" selected>24h</option>
+              <option value="72">3 days</option><option value="720">30 days</option>
+            </select></label>
+            <span id="qf-count" style="font-size:11px;color:var(--text-muted);margin-left:8px"></span>
+            <button class="btn btn-ghost btn-sm" id="btn-refresh-feed">Refresh</button>
+          </div>
+        </div>
+        <div id="quake-feed-body">
+          <div id="qf-loading" style="display:none;padding:20px;text-align:center;color:var(--text-dim)">Loading earthquake data...</div>
+          <table id="quake-table">
+            <thead><tr>
+              <th>Mag</th><th>Location</th><th>Depth (km)</th>
+              <th>Time (UTC)</th><th>Tsunami</th><th>Source</th>
+            </tr></thead>
+            <tbody id="quake-tbody"></tbody>
+          </table>
+          <div id="qf-empty" style="display:none;padding:30px;text-align:center;color:var(--text-dim)">No earthquakes found for these filters.</div>
+        </div>
+        <!-- Live station links -->
+        <div style="padding:8px 16px;border-top:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:10px;color:var(--text-dim)">Live sources:</span>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="QE.openExternal('https://earthquake.usgs.gov/earthquakes/map/')">USGS Map</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="QE.openExternal('https://www.emsc-csem.org/')">EMSC</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="QE.openExternal('https://terremoti.ingv.it/')">INGV Italy</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="QE.openExternal('https://earthquakescanada.nrcan.gc.ca/')">NRCan Canada</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="QE.openExternal('https://geofon.gfz-potsdam.de/eqinfo/list.php')">GFZ Germany</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="QE.openExternal('http://www.ncedc.org/recenteqs/')">NCEDC California</button>
+        </div>
+      </div>
+
+      <!-- ── SOLAR MONITOR ──────────────────────────────────────────── -->
+      <div class="panel" id="panel-solar">
+        <div class="panel-header">
+          <h2>Solar &amp; Space Weather Monitor</h2>
+          <div class="phd-right"><span id="solar-updated">--</span><button class="btn btn-ghost btn-sm" id="btn-refresh-solar">Refresh</button></div>
+        </div>
+        <div class="stat-grid" style="grid-template-columns:repeat(8,1fr)">
+          <div class="stat-card"><div class="stat-label">X-ray Class</div><div class="stat-value" id="sol-class">--</div><div class="stat-sub" id="sol-flux">--</div></div>
+          <div class="stat-card"><div class="stat-label">Kp Index</div><div class="stat-value" id="sol-kp">--</div><div class="stat-sub" id="sol-storm">--</div></div>
+          <div class="stat-card"><div class="stat-label">Solar Wind</div><div class="stat-value" id="sol-wind">--</div><div class="stat-sub">km/s speed</div></div>
+          <div class="stat-card"><div class="stat-label">Density</div><div class="stat-value" id="sol-density">--</div><div class="stat-sub">p/cm³</div></div>
+          <div class="stat-card"><div class="stat-label">IMF Bz</div><div class="stat-value" id="sol-bz">--</div><div class="stat-sub">nT (–ve = southward)</div></div>
+          <div class="stat-card"><div class="stat-label">IMF Bt</div><div class="stat-value" id="sol-bt">--</div><div class="stat-sub">nT total field</div></div>
+          <div class="stat-card"><div class="stat-label">Active Regions</div><div class="stat-value" id="sol-regions">--</div><div class="stat-sub">sunspot groups</div></div>
+          <div class="stat-card"><div class="stat-label">M/X Flares (7d)</div><div class="stat-value" id="sol-flares">--</div><div class="stat-sub">significant events</div></div>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-card" style="grid-column:1/-1"><div class="chart-title">GOES X-ray Flux — Last 24 Hours (0.1–0.8 nm, Log scale)</div><div class="chart-wrap"><canvas id="chart-xray"></canvas></div></div>
+          <div class="chart-card"><div class="chart-title">Planetary Kp Index (3-hour values)</div><div class="chart-wrap"><canvas id="chart-kp"></canvas></div></div>
+          <div class="chart-card"><div class="chart-title">DSCOVR Solar Wind Speed (km/s)</div><div class="chart-wrap"><canvas id="chart-wind"></canvas></div></div>
+        </div>
+
+        <!-- Active sunspot regions + Recent flares -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 16px 12px">
+          <div class="result-section" style="margin:0">
+            <div class="rs-title">Active Sunspot Regions (NOAA)</div>
+            <div id="sol-active-regions-table"></div>
+          </div>
+          <div class="result-section" style="margin:0">
+            <div class="rs-title">Recent M/X Flares (last 7 days)</div>
+            <div id="sol-flares-list"></div>
+          </div>
+        </div>
+
+        <!-- Live data source links -->
+        <div style="padding:0 16px 16px">
+          <div class="rs-title" style="margin-bottom:8px">Live Data Sources</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="QE.openExternal('https://www.swpc.noaa.gov/')">NOAA SWPC Dashboard</button>
+            <button class="btn btn-ghost btn-sm" onclick="QE.openExternal('https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json')">GOES X-ray JSON</button>
+            <button class="btn btn-ghost btn-sm" onclick="QE.openExternal('https://www.n3kl.org/sun/noaa.html')">Solar Activity Graph</button>
+            <button class="btn btn-ghost btn-sm" onclick="QE.openExternal('https://www.spaceweather.com/')">Spaceweather.com</button>
+            <button class="btn btn-ghost btn-sm" onclick="QE.openExternal('https://spaceweatherlive.com/')">SpaceWeatherLive</button>
+            <button class="btn btn-ghost btn-sm" onclick="QE.openExternal('https://solarmonitor.org/')">Solar Monitor</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── PLANETARY ──────────────────────────────────────────────── -->
+      <div class="panel" id="panel-planetary">
+        <div class="panel-header">
+          <h2>Planetary Positions &amp; Tidal Forces</h2>
+          <div class="phd-right"><span id="planet-updated">--</span><button class="btn btn-ghost btn-sm" id="btn-refresh-planet">Refresh</button></div>
+        </div>
+        <div class="tidal-gauge">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted)">Tidal Stress Index</span>
+            <span style="font-family:var(--mono);font-size:18px;font-weight:700" id="tidal-index-val">--</span>
+          </div>
+          <div class="tidal-gauge-bar-bg"><div class="tidal-gauge-bar" id="tidal-gauge-bar" style="width:0%"></div></div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim)">
+            <span>LOW (Neap)</span><span id="tidal-type-label">--</span><span>HIGH (Perigean Spring)</span>
+          </div>
+        </div>
+        <div class="planet-grid">
+          <div class="planet-card"><div class="pc-name">MOON</div>
+            <div class="pc-row"><span class="pc-key">Phase</span><span class="pc-val" id="p-moon-phase">--</span></div>
+            <div class="pc-row"><span class="pc-key">Illumination</span><span class="pc-val" id="p-moon-illum">--</span></div>
+            <div class="pc-row"><span class="pc-key">Distance</span><span class="pc-val" id="p-moon-dist">--</span></div>
+            <div class="pc-row"><span class="pc-key">Tidal Force</span><span class="pc-val" id="p-moon-tidal">--</span></div>
+          </div>
+          <div class="planet-card"><div class="pc-name">SUN</div>
+            <div class="pc-row"><span class="pc-key">Distance</span><span class="pc-val" id="p-sun-dist">--</span></div>
+            <div class="pc-row"><span class="pc-key">Tidal Force</span><span class="pc-val" id="p-sun-tidal">--</span></div>
+            <div class="pc-row"><span class="pc-key">Near Perihelion</span><span class="pc-val" id="p-sun-peri">--</span></div>
+            <div class="pc-row"><span class="pc-key">Alignment</span><span class="pc-val" id="p-sun-align">--</span></div>
+          </div>
+          <div class="planet-card"><div class="pc-name">JUPITER</div>
+            <div class="pc-row"><span class="pc-key">Distance</span><span class="pc-val" id="p-jup-dist">--</span></div>
+            <div class="pc-row"><span class="pc-key">Elongation</span><span class="pc-val" id="p-jup-elong">--</span></div>
+          </div>
+          <div class="planet-card"><div class="pc-name">SATURN</div>
+            <div class="pc-row"><span class="pc-key">Distance</span><span class="pc-val" id="p-sat-dist">--</span></div>
+            <div class="pc-row"><span class="pc-key">Elongation</span><span class="pc-val" id="p-sat-elong">--</span></div>
+          </div>
+          <div class="planet-card"><div class="pc-name">VENUS</div>
+            <div class="pc-row"><span class="pc-key">Distance</span><span class="pc-val" id="p-ven-dist">--</span></div>
+            <div class="pc-row"><span class="pc-key">Elongation</span><span class="pc-val" id="p-ven-elong">--</span></div>
+          </div>
+          <div class="planet-card"><div class="pc-name">MARS</div>
+            <div class="pc-row"><span class="pc-key">Distance</span><span class="pc-val" id="p-mars-dist">--</span></div>
+            <div class="pc-row"><span class="pc-key">Elongation</span><span class="pc-val" id="p-mars-elong">--</span></div>
+          </div>
+        </div>
+        <div style="padding:0 20px 16px">
+          <div class="chart-card"><div class="chart-title">Magnitude Distribution — Current Dataset</div>
+            <div class="chart-wrap" style="max-height:180px"><canvas id="chart-magdist"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── QUAKE DATABASE ──────────────────────────────────────────── -->
+      <div class="panel" id="panel-database">
+        <div class="panel-header">
+          <h2>Local Quake Database</h2>
+          <div class="phd-right">
+            <button class="btn btn-ghost btn-sm" id="btn-db-refresh">Refresh</button>
+          </div>
+        </div>
+        <div class="stat-grid" id="db-stats-grid">
+          <div class="stat-card"><div class="stat-label">Total Records</div><div class="stat-value" id="db-total">--</div><div class="stat-sub">all time</div></div>
+          <div class="stat-card"><div class="stat-label">Months Covered</div><div class="stat-value" id="db-months-count">--</div><div class="stat-sub">in local DB</div></div>
+        </div>
+        <div style="padding:0 20px 10px">
+          <div class="rs-title" style="margin-bottom:8px">Month-by-Month Records</div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap" id="db-month-buttons"></div>
+          <div class="result-section" id="db-month-detail" style="display:none">
+            <div id="db-month-content"></div>
+          </div>
+        </div>
+        <div style="padding:0 20px 16px">
+          <div class="rs-title" style="margin-bottom:8px">Query Historical Data</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+            <label style="font-size:11px;color:var(--text-muted)">Start: <input type="date" id="db-start" class="ctrl-input" style="width:140px;margin-left:4px"></label>
+            <label style="font-size:11px;color:var(--text-muted)">End: <input type="date" id="db-end" class="ctrl-input" style="width:140px;margin-left:4px"></label>
+            <label style="font-size:11px;color:var(--text-muted)">Min M: <input type="number" id="db-minmag" class="ctrl-input" style="width:70px;margin-left:4px" value="4.0" step="0.1" min="0"></label>
+            <button class="btn btn-primary btn-sm" id="btn-db-query">Query</button>
+          </div>
+          <div id="db-query-result" style="font-size:11px;color:var(--text-muted)"></div>
+        </div>
+      </div>
+
+      <!-- ── SIMULATION ──────────────────────────────────────────────── -->
+      <div class="panel" id="panel-simulation">
+        <div class="panel-header">
+          <h2>Seismic Risk Simulation</h2>
+          <div class="phd-right"><span id="sim-timestamp">Not run yet</span></div>
+        </div>
+        <!-- Token stats bar -->
+        <div id="token-stats-bar" style="display:none">
+          <span id="ts-tps">0 t/s</span>
+          <span id="ts-tokens">0 tokens</span>
+          <span id="ts-elapsed">0.0s</span>
+          <button class="btn btn-danger btn-sm" id="btn-stop-gen" style="margin-left:auto">Stop</button>
+        </div>
+        <div id="sim-body">
+          <div id="sim-controls">
+            <div>
+              <label class="ctrl-label">Time Window</label>
+              <select id="sim-hours" class="ctrl-select">
+                <option value="1">Last 1 hour</option>
+                <option value="6">Last 6 hours</option>
+                <option value="12">Last 12 hours</option>
+                <option value="24" selected>Last 24 hours</option>
+                <option value="72">Last 3 days</option>
+                <option value="720">Last 30 days</option>
+              </select>
+            </div>
+            <div>
+              <label class="ctrl-label">Min Magnitude</label>
+              <select id="sim-minmag" class="ctrl-select">
+                <option value="0.1">M0.1+</option>
+                <option value="2.5" selected>M2.5+</option>
+                <option value="3.0">M3.0+</option>
+                <option value="4.0">M4.0+</option>
+              </select>
+            </div>
+            <div>
+              <label class="ctrl-label">Llama Model</label>
+              <select id="sim-model" class="ctrl-select"></select>
+              <button class="btn btn-ghost btn-sm btn-block" id="btn-reload-model" style="margin-top:6px;display:none">
+                &#8635; Reload Server with this Model
+              </button>
+              <div id="model-reload-hint" style="font-size:10px;color:var(--moderate);margin-top:4px;display:none">Model changed — reload server first</div>
+            </div>
+            <button class="btn btn-primary btn-block" id="btn-run-sim">&#9654; Run Simulation</button>
+            <button class="btn btn-ghost btn-block" id="btn-save-sim" style="display:none">Save Result</button>
+            <div>
+              <div class="progress-bar-bg"><div class="progress-bar" id="sim-progress-bar"></div></div>
+              <div id="sim-progress-text"></div>
+            </div>
+          </div>
+
+          <div id="sim-results">
+            <div id="sim-placeholder" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:10px;color:var(--text-dim)">
+              <div style="font-size:36px">&#9654;</div>
+              <div>Configure options and click Run Simulation</div>
+              <div style="font-size:11px">Fetches live data, runs algorithm, streams Llama AI analysis</div>
+            </div>
+
+            <div id="sim-output" style="display:none">
+              <div class="result-section">
+                <div class="rs-title">Overall Risk Assessment</div>
+                <div style="display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap">
+                  <div>
+                    <div class="risk-score-big" id="res-score">--</div>
+                    <span class="risk-level-badge" id="res-level">--</span>
+                  </div>
+                  <div style="flex:1">
+                    <div class="factor-row"><span class="factor-name">Tidal Stress</span><div class="factor-bar-bg"><div class="factor-bar" id="fb-tidal" style="width:0%"></div></div><span class="factor-score" id="fs-tidal">--</span></div>
+                    <div class="factor-row"><span class="factor-name">Solar Activity</span><div class="factor-bar-bg"><div class="factor-bar" id="fb-solar" style="width:0%"></div></div><span class="factor-score" id="fs-solar">--</span></div>
+                    <div class="factor-row"><span class="factor-name">Geomagnetic Kp</span><div class="factor-bar-bg"><div class="factor-bar" id="fb-geomag" style="width:0%"></div></div><span class="factor-score" id="fs-geomag">--</span></div>
+                    <div class="factor-row"><span class="factor-name">Historical Seismic</span><div class="factor-bar-bg"><div class="factor-bar" id="fb-hist" style="width:0%"></div></div><span class="factor-score" id="fs-hist">--</span></div>
+                    <div class="factor-row"><span class="factor-name">Planetary Align</span><div class="factor-bar-bg"><div class="factor-bar" id="fb-planet" style="width:0%"></div></div><span class="factor-score" id="fs-planet">--</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="result-section">
+                <div class="rs-title">Regional Risk — Top Zones</div>
+                <div id="res-regions"></div>
+              </div>
+
+              <div class="result-section" id="res-llama-section">
+                <div class="rs-title">Llama AI Analysis</div>
+                <div id="res-llama" class="llama-output"></div>
+              </div>
+
+              <!-- ── ANALYST CHAT ──────────────────────────────────── -->
+              <div class="result-section" id="chat-section">
+                <div class="rs-title">Analyst Chat</div>
+                <div id="chat-messages"></div>
+                <div id="chat-input-row">
+                  <textarea id="chat-input" class="chat-textarea" placeholder="Ask a follow-up question about this simulation, the data, or earthquake science..." rows="2"></textarea>
+                  <button class="btn btn-primary" id="btn-chat-send">Send</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── HISTORY ────────────────────────────────────────────────── -->
+      <div class="panel" id="panel-history">
+        <div class="panel-header">
+          <h2>Simulation History</h2>
+          <div class="phd-right"><button class="btn btn-ghost btn-sm" id="btn-refresh-history">Refresh</button></div>
+        </div>
+        <div id="history-body"><div id="history-list"></div></div>
+      </div>
+
+      <!-- ── UNIFIED SETTINGS ─────────────────────────────────────── -->
+      <div class="panel" id="panel-appsettings">
+        <div class="panel-header">
+          <h2>Settings</h2>
+          <div class="phd-right" id="settings-save-bar">
+            <button class="btn btn-primary btn-sm" id="btn-save-personality" style="display:none">Save Profile</button>
+            <button class="btn btn-primary btn-sm" id="btn-save-skills" style="display:none">Save Skills</button>
+          </div>
+        </div>
+
+        <!-- Settings tab bar -->
+        <div class="settings-tabs">
+          <button class="stab active" data-stab="model">&#127968; AI Models</button>
+          <button class="stab" data-stab="download">&#8659; Download Models</button>
+          <button class="stab" data-stab="skills">&#9993; Skills</button>
+          <button class="stab" data-stab="profile">&#9881; Analyst Profile</button>
+        </div>
+
+        <!-- Tab: AI Models -->
+        <div class="stab-panel active" id="stab-model" style="padding:16px 20px;overflow-y:auto;flex:1">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">
+            Select a model and click Load to switch the active AI. Large models take 3-8 minutes to load on CPU.
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+            <select id="settings-model-select" class="ctrl-select" style="flex:1"></select>
+            <select id="settings-ctx-select" class="ctrl-select" style="width:110px">
+              <option value="2048">2048 ctx</option>
+              <option value="4096" selected>4096 ctx</option>
+              <option value="8192">8192 ctx</option>
+            </select>
+            <button class="btn btn-primary btn-sm" id="btn-settings-load-model">&#9654; Load</button>
+          </div>
+          <div id="settings-model-status" style="font-size:11px;color:var(--text-dim);margin-bottom:16px">
+            Current: <span id="settings-current-model">--</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Installed Models</div>
+          <div id="settings-model-list" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+
+        <!-- Tab: Download Models -->
+        <div class="stab-panel" id="stab-download" style="padding:16px 20px;overflow-y:auto;flex:1">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px">
+            Curated GGUF models from HuggingFace optimized for CPU inference. All Q4_K_M quantization — best balance of quality and speed on CPU. Files download directly to your Models folder.
+          </div>
+          <div id="model-catalog" style="display:flex;flex-direction:column;gap:10px"></div>
+        </div>
+
+        <!-- Tab: Skills -->
+        <div class="stab-panel" id="stab-skills" style="padding:16px 20px;overflow-y:auto;flex:1">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">
+            Enabled skills are injected into the system prompt before every analysis.
+          </div>
+          <div id="skills-list"></div>
+          <button class="btn btn-ghost btn-sm" id="btn-add-skill" style="margin-top:12px">+ Add Custom Skill</button>
+        </div>
+
+        <!-- Tab: Analyst Profile -->
+        <div class="stab-panel" id="stab-profile" style="padding:16px 20px;overflow-y:auto;flex:1">
+          <div style="margin-bottom:14px">
+            <label class="ctrl-label">Analyst Instructions (System Prompt)</label>
+            <textarea id="cfg-system" class="ctrl-input" rows="5" style="font-family:var(--mono);font-size:11px;resize:vertical"></textarea>
+          </div>
+          <div class="settings-grid">
+            <div>
+              <label class="ctrl-label">Temperature: <span id="cfg-temp-val">0.25</span></label>
+              <input type="range" id="cfg-temp" min="0" max="2" step="0.05" value="0.25" class="range-input">
+              <div class="range-hint">Low = focused/deterministic, High = creative/varied</div>
+            </div>
+            <div>
+              <label class="ctrl-label">Top P: <span id="cfg-topp-val">0.90</span></label>
+              <input type="range" id="cfg-topp" min="0" max="1" step="0.05" value="0.9" class="range-input">
+            </div>
+            <div>
+              <label class="ctrl-label">Top K: <span id="cfg-topk-val">40</span></label>
+              <input type="range" id="cfg-topk" min="0" max="200" step="5" value="40" class="range-input">
+            </div>
+            <div>
+              <label class="ctrl-label">Repeat Penalty: <span id="cfg-rep-val">1.10</span></label>
+              <input type="range" id="cfg-rep" min="1" max="2" step="0.05" value="1.1" class="range-input">
+            </div>
+            <div>
+              <label class="ctrl-label">Max Tokens: <span id="cfg-maxt-val">1200</span></label>
+              <input type="range" id="cfg-maxt" min="64" max="4096" step="64" value="1200" class="range-input">
+            </div>
+          </div>
+          <div style="margin-top:14px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text-muted)">
+              <input type="checkbox" id="cfg-mirostat"> Mirostat Sampling (adaptive perplexity control)
+            </label>
+          </div>
+          <div id="mirostat-opts" style="display:none;margin-top:10px" class="settings-grid">
+            <div>
+              <label class="ctrl-label">Mirostat Tau: <span id="cfg-tau-val">5.0</span></label>
+              <input type="range" id="cfg-tau" min="0" max="10" step="0.1" value="5" class="range-input">
+              <div class="range-hint">Target perplexity (lower = more focused)</div>
+            </div>
+            <div>
+              <label class="ctrl-label">Mirostat Eta: <span id="cfg-eta-val">0.10</span></label>
+              <input type="range" id="cfg-eta" min="0" max="1" step="0.05" value="0.1" class="range-input">
+              <div class="range-hint">Learning rate for perplexity adjustment</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── LIVE STATIONS ─────────────────────────────────────────── -->
+      <div class="panel" id="panel-stations" style="flex-direction:row;padding:0;overflow:hidden">
+        <!-- Stations sidebar -->
+        <div class="st-sidebar">
+          <div class="st-controls">
+            <select id="st-center-select" class="ctrl-select" style="flex:1">
+              <option value="earthscope">EarthScope (US Global)</option>
+              <option value="canada">Canada NRCan</option>
+              <option value="ncedc">NCEDC (N. California)</option>
+              <option value="scedc">SCEDC (S. California)</option>
+              <option value="ingv">INGV (Italy)</option>
+              <option value="gfz">GFZ (Germany)</option>
+            </select>
+            <select id="st-network-select" class="ctrl-select" style="width:66px"></select>
+          </div>
+          <div class="st-stats" id="st-stats">Select center &amp; network</div>
+          <div id="st-station-list"></div>
+        </div>
+        <!-- Waveform viewer -->
+        <div class="st-viewer">
+          <div class="st-wf-header">
+            <span id="st-wf-title" style="font-weight:700;color:var(--accent);font-size:14px">Waveform Viewer</span>
+            <button id="st-wf-close" class="btn btn-ghost btn-sm">&#10005;</button>
+          </div>
+          <div class="st-wf-controls">
+            <span style="font-size:11px;color:var(--text-dim)">Window:</span>
+            <div id="st-window-btns">
+              <button class="st-win-btn active" data-seconds="60">1 min</button>
+              <button class="st-win-btn" data-seconds="600">10 min</button>
+              <button class="st-win-btn" data-seconds="3600">1 hr</button>
+            </div>
+            <span id="st-wf-status" style="font-size:11px;color:var(--text-dim);margin-left:auto">Click a station to view live waveform</span>
+          </div>
+          <div id="st-wf-chart-wrap">
+            <div id="st-placeholder">Click a station to view live waveform data</div>
+            <canvas id="st-waveform-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── STATISTICS ─────────────────────────────────────────────── -->
+      <div class="panel" id="panel-stats">
+        <div class="panel-header">
+          <h2>Global Seismic Statistics</h2>
+          <div class="phd-right">
+            <span id="stats-updated" style="margin-right:8px">--</span>
+            <button class="btn btn-ghost btn-sm" id="btn-refresh-stats">Refresh</button>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="stats-filters">
+          <label class="sf-label">Time Range:
+            <select id="stats-hours" class="ctrl-select">
+              <option value="1">1 hour</option>
+              <option value="6">6 hours</option>
+              <option value="12">12 hours</option>
+              <option value="24" selected>24 hours</option>
+              <option value="48">48 hours</option>
+              <option value="72">72 hours</option>
+              <option value="168" data-db>7 days (DB)</option>
+              <option value="720" data-db>30 days (DB)</option>
+            </select>
+          </label>
+          <label class="sf-label">Min Magnitude:
+            <select id="stats-minmag" class="ctrl-select">
+              <option value="0">M0.0+</option>
+              <option value="0.5">M0.5+</option>
+              <option value="1">M1.0+</option>
+              <option value="2" selected>M2.0+</option>
+              <option value="2.5">M2.5+</option>
+              <option value="3">M3.0+</option>
+              <option value="4">M4.0+</option>
+            </select>
+          </label>
+          <div class="sf-label">Sources:
+            <div id="stats-source-checks" class="source-checks"></div>
+          </div>
+          <div id="stats-db-note" style="display:none;font-size:10px;color:var(--moderate);margin-left:auto;align-self:center">
+            &#9432; Using local DB — run shorter time range for live data
+          </div>
+        </div>
+
+        <!-- Threshold count row -->
+        <div class="stat-grid" style="grid-template-columns:repeat(7,1fr)">
+          <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value" id="st-total">--</div></div>
+          <div class="stat-card"><div class="stat-label">M2+</div><div class="stat-value" id="st-m2">--</div></div>
+          <div class="stat-card"><div class="stat-label">M3+</div><div class="stat-value" id="st-m3">--</div></div>
+          <div class="stat-card"><div class="stat-label">M4+</div><div class="stat-value" id="st-m4">--</div></div>
+          <div class="stat-card"><div class="stat-label">M5+</div><div class="stat-value" id="st-m5">--</div></div>
+          <div class="stat-card"><div class="stat-label">M6+</div><div class="stat-value" id="st-m6">--</div></div>
+          <div class="stat-card"><div class="stat-label">M7+</div><div class="stat-value" id="st-m7">--</div></div>
+        </div>
+
+        <!-- Info row -->
+        <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
+          <div class="stat-card"><div class="stat-label">Max Magnitude</div><div class="stat-value" id="st-maxmag">--</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Depth</div><div class="stat-value" id="st-avgdepth">--</div><div class="stat-sub">km</div></div>
+          <div class="stat-card"><div class="stat-label">Tsunami Alerts</div><div class="stat-value" id="st-tsunami">--</div></div>
+          <div class="stat-card" id="st-trend-card"><div class="stat-label">Trend vs Prior Period</div><div class="stat-value" id="st-trend">--</div><div class="stat-sub" id="st-trend-sub">--</div></div>
+        </div>
+
+        <!-- Charts -->
+        <div class="chart-grid" style="padding:0 16px 8px">
+          <div class="chart-card" style="grid-column:1/-1">
+            <div class="chart-title">Events per Hour/Day — Selected Period</div>
+            <div class="chart-wrap" style="max-height:160px"><canvas id="chart-stats-time"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Magnitude Distribution</div>
+            <div class="chart-wrap" style="max-height:180px"><canvas id="chart-stats-mag"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Depth Distribution</div>
+            <div class="chart-wrap" style="max-height:180px"><canvas id="chart-stats-depth"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Region + source breakdown -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 16px 16px">
+          <div class="chart-card">
+            <div class="chart-title">Top Active Regions</div>
+            <div class="chart-wrap" style="max-height:200px"><canvas id="chart-stats-region"></canvas></div>
+          </div>
+          <div class="result-section" style="margin:0">
+            <div class="rs-title">Source Breakdown</div>
+            <div id="stats-source-bars"></div>
+            <div class="rs-title" style="margin-top:12px">Depth Classification</div>
+            <div id="stats-depth-detail"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── QUAKE NEWS ─────────────────────────────────────────────── -->
+      <div class="panel" id="panel-qnews">
+        <div class="panel-header">
+          <h2>Quake News — Active Swarms &amp; Sequences</h2>
+          <div class="phd-right">
+            <label class="sf-label" style="margin-right:8px">Window:
+              <select id="qnews-hours" class="ctrl-select" style="width:100px">
+                <option value="48">48 hours</option>
+                <option value="72">72 hours</option>
+                <option value="168" selected>7 days</option>
+                <option value="336">14 days</option>
+              </select>
+            </label>
+            <label class="sf-label" style="margin-right:8px">Min M per event:
+              <select id="qnews-minmag" class="ctrl-select" style="width:80px">
+                <option value="1.0">M1.0</option>
+                <option value="1.5" selected>M1.5</option>
+                <option value="2.0">M2.0</option>
+                <option value="2.5">M2.5</option>
+              </select>
+            </label>
+            <span id="qnews-updated" style="margin-right:8px">--</span>
+            <button class="btn btn-primary btn-sm" id="btn-refresh-qnews">&#8635; Scan</button>
+          </div>
+        </div>
+
+        <div id="qnews-loading" style="display:none;padding:30px;text-align:center;color:var(--text-dim)">
+          <div class="spinner" style="margin:0 auto 10px"></div>
+          Scanning <span id="qnews-source-count">4</span> networks for active swarms...
+        </div>
+
+        <div id="qnews-meta" style="padding:4px 20px 8px;font-size:11px;color:var(--text-dim)"></div>
+
+        <div id="qnews-swarms-list" style="padding:0 12px 16px;overflow-y:auto;flex:1">
+          <div style="padding:40px;text-align:center;color:var(--text-dim)">
+            Click Scan to detect active swarms and earthquake sequences worldwide.
+          </div>
+        </div>
+      </div>
+
+    </div><!-- #content -->
+  </div><!-- #body -->
+</div><!-- #app -->
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="stations.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
